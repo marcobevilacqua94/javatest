@@ -67,7 +67,6 @@ public class App {
                     bulkTransactionWithMonoReactive(jsonObject, cluster, args);
             }
 
-
             long endTime = System.nanoTime();
             long duration = (endTime - startTime);
             System.out.println(duration / 1000000000 + "s");
