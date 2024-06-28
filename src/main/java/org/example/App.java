@@ -50,7 +50,7 @@ public class App {
 
         ) {
 
-            switch(Integer.parseInt(args[6])) {
+            switch(Integer.parseInt(args[7])) {
                 case 0:
                     bulkInsert(jsonObject, cluster, args);
                 case 1:
@@ -95,7 +95,7 @@ public class App {
     public static void bulkInsertWithBuffer(JsonObject jsonObject, Cluster cluster, String[] args) {
         ReactiveCollection coll = cluster.bucket("test").scope("test").collection("test").reactive();
         int concurrency = Runtime.getRuntime().availableProcessors();
-        var buffer = 30000;
+        var buffer = Integer.parseInt(args[6]);
         var finalDocs = Integer.parseInt(args[3]);
         Flux.range(0, finalDocs)
                 .buffer(buffer)
@@ -142,7 +142,7 @@ public class App {
 
         int concurrency = Runtime.getRuntime().availableProcessors(); // This many operations will be in-flight at once
 
-        int buffer = 100;
+        int buffer = Integer.parseInt(args[6]);
 
         cluster.reactive().transactions().run((ctx) -> Flux.range(0, Integer.parseInt(args[3]))
                 .buffer(buffer)
@@ -193,7 +193,7 @@ public class App {
 
         Collection coll = cluster.bucket("test").scope("test").collection("test");
         int concurrency = Runtime.getRuntime().availableProcessors(); // This many operations will be in-flight at once
-        int buffer = 1000;
+        int buffer = Integer.parseInt(args[6]);
 
         cluster.transactions().run((ctx) -> Flux.range(0, Integer.parseInt(args[3]))
                 .buffer(buffer)
