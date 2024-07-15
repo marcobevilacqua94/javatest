@@ -37,6 +37,7 @@ public class App {
         JsonObject jsonObject = JsonObject.create();
 
         jsonObject.put("body", RandomString(Integer.parseInt(args[4])));
+        jsonObject.put("version", args[5]);
 
         long startTime = System.nanoTime();
         try (Cluster cluster = Cluster.connect(
@@ -53,18 +54,25 @@ public class App {
             switch(Integer.parseInt(args[7])) {
                 case 0:
                     bulkInsert(jsonObject, cluster, args);
+                    break;
                 case 1:
                     bulkInsertWithBuffer(jsonObject, cluster, args);
+                    break;
                 case 2:
                     bulkTransaction(jsonObject, cluster, args);
+                    break;
                 case 3:
                     bulkTransactionReactive(jsonObject, cluster, args);
+                    break;
                 case 4:
                     bulkTransactionWithBuffer(jsonObject, cluster, args);
+                    break;
                 case 5:
                     bulkTransactionReactiveWithBuffer(jsonObject, cluster, args);
+                    break;
                 case 6:
                     bulkTransactionWithMonoReactive(jsonObject, cluster, args);
+                    break;
             }
 
             long endTime = System.nanoTime();
@@ -75,7 +83,9 @@ public class App {
 
 
     public static void bulkInsert(JsonObject jsonObject, Cluster cluster, String[] args) {
-        ReactiveCollection coll = cluster.bucket("test").scope("test").collection("test").reactive();
+        ReactiveBucket bucket = cluster.bucket("test").reactive();
+        bucket.waitUntilReady(Duration.ofSeconds(10)).block();
+        ReactiveCollection coll = bucket.scope("test").collection("test");
         int concurrency = Runtime.getRuntime().availableProcessors();
         var finalDocs = Integer.parseInt(args[3]);
         Flux.range(0, finalDocs)
@@ -88,12 +98,15 @@ public class App {
                         }
                 )
                 .sequential()
+                .retry()
                 .collectList()
                 .block();
     }
 
     public static void bulkInsertWithBuffer(JsonObject jsonObject, Cluster cluster, String[] args) {
-        ReactiveCollection coll = cluster.bucket("test").scope("test").collection("test").reactive();
+        ReactiveBucket bucket = cluster.bucket("test").reactive();
+        bucket.waitUntilReady(Duration.ofSeconds(10)).block();
+        ReactiveCollection coll = bucket.scope("test").collection("test");
         int concurrency = Runtime.getRuntime().availableProcessors();
         var buffer = Integer.parseInt(args[6]);
         var finalDocs = Integer.parseInt(args[3]);
@@ -112,13 +125,16 @@ public class App {
                         .retry()
                         .collectList()
                         .block()
-                ).retry()
+                )
                 .collectList()
+                .retry()
                 .block();
     }
 
     public static void bulkTransactionReactive(JsonObject jsonObject, Cluster cluster, String[] args) {
-        ReactiveCollection coll = cluster.bucket("test").scope("test").collection("test").reactive();
+        ReactiveBucket bucket = cluster.bucket("test").reactive();
+        bucket.waitUntilReady(Duration.ofSeconds(10)).block();
+        ReactiveCollection coll = bucket.scope("test").collection("test");
 
         int concurrency = Runtime.getRuntime().availableProcessors(); // This many operations will be in-flight at once
 
@@ -133,12 +149,14 @@ public class App {
                                     .doOnSuccess(doc -> ctx.replace(doc, jsonObject))
                                     .onErrorResume(DocumentNotFoundException.class, (er) -> ctx.insert(coll, docId.toString(), jsonObject));
                         }
-                ).then()
-        ).then().block();
+                ).then().retry()
+        ).then().retry().block();
     }
 
     public static void bulkTransactionReactiveWithBuffer(JsonObject jsonObject, Cluster cluster, String[] args) {
-        ReactiveCollection coll = cluster.bucket("test").scope("test").collection("test").reactive();
+        ReactiveBucket bucket = cluster.bucket("test").reactive();
+        bucket.waitUntilReady(Duration.ofSeconds(10)).block();
+        ReactiveCollection coll = bucket.scope("test").collection("test");
 
         int concurrency = Runtime.getRuntime().availableProcessors(); // This many operations will be in-flight at once
 
@@ -159,14 +177,17 @@ public class App {
                         .retry()
                         .collectList()
                         .block()
-                ).retry()
+                )
                 .collectList()
-        ).then().block();
+                .retry()
+        ).then().retry().block();
     }
 
     public static void bulkTransaction(JsonObject jsonObject, Cluster cluster, String[] args) {
 
-        Collection coll = cluster.bucket("test").scope("test").collection("test");
+        Bucket bucket = cluster.bucket("test");
+        bucket.waitUntilReady(Duration.ofSeconds(10));
+        Collection coll = bucket.scope("test").collection("test");
         int concurrency = Runtime.getRuntime().availableProcessors(); // This many operations will be in-flight at once
 
 
@@ -185,13 +206,16 @@ public class App {
                         }
                 )
                 .then()
+                .retry()
                 .block()
         );
     }
 
     public static void bulkTransactionWithBuffer(JsonObject jsonObject, Cluster cluster, String[] args) {
 
-        Collection coll = cluster.bucket("test").scope("test").collection("test");
+        Bucket bucket = cluster.bucket("test");
+        bucket.waitUntilReady(Duration.ofSeconds(10));
+        Collection coll = bucket.scope("test").collection("test");
         int concurrency = Runtime.getRuntime().availableProcessors(); // This many operations will be in-flight at once
         int buffer = Integer.parseInt(args[6]);
 
@@ -213,14 +237,17 @@ public class App {
                         .retry()
                         .collectList()
                         .block()
-                ).retry()
+                )
                 .collectList()
+                .retry()
                 .block()
         );
     }
 
     public static void bulkTransactionWithMonoReactive(JsonObject jsonObject, Cluster cluster, String[] args) {
-        ReactiveCollection coll = cluster.bucket("test").scope("test").collection("test").reactive();
+        ReactiveBucket bucket = cluster.bucket("test").reactive();
+        bucket.waitUntilReady(Duration.ofSeconds(10)).block();
+        ReactiveCollection coll = bucket.scope("test").collection("test");
         cluster.reactive().transactions().run((ctx) -> {
                     List<Mono<TransactionGetResult>> monoList = new ArrayList<>();
                     for (int i = 0; i <= Integer.parseInt(args[3]); i++) {
@@ -238,7 +265,7 @@ public class App {
                     Flux<TransactionGetResult> flux = Flux.concat(monoList);
                     return Mono.from(flux.collectList().then());
                 }
-        ).then().block();
+        ).then().retry().block();
 
     }
 
