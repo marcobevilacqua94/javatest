@@ -21,7 +21,7 @@ password is the couchbase password
 
 0 is the code of the operation we want to perform:
 
-               case 0:
+                case 0:
                     bulkInsert
                 case 1:
                     bulkInsertWithBuffer
