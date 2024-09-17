@@ -1,5 +1,6 @@
 package org.example;
 
+import com.couchbase.client.core.env.LoggerConfig;
 import com.couchbase.client.core.error.DocumentExistsException;
 import com.couchbase.client.core.error.DocumentNotFoundException;
 import com.couchbase.client.core.msg.kv.DurabilityLevel;
@@ -11,9 +12,11 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
+import java.io.IOException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.logging.*;
 
 
 /**
@@ -31,6 +34,7 @@ public class App {
     }
 
     public static void main(String[] args) {
+
         System.out.println("Hello World!");
 
 
@@ -43,6 +47,7 @@ public class App {
         try (Cluster cluster = Cluster.connect(
                 args[0],
                 ClusterOptions.clusterOptions(args[1], args[2])
+
                         .environment(env -> env.transactionsConfig(TransactionsConfig.builder()
                                 .timeout(Duration.ofMinutes(10))
                                 .durabilityLevel(DurabilityLevel.NONE)
@@ -143,10 +148,6 @@ public class App {
                 .concatMap(
                         docId -> {
                             if (docId % 1000 == 0) System.out.println(docId);
-
-//                            return ctx.get(coll, docId.toString())
-//                                    .doOnSuccess(doc -> ctx.replace(doc, jsonObject))
-//                                    .onErrorResume(DocumentNotFoundException.class, (er) -> ctx.insert(coll, docId.toString(), jsonObject));
                             return ctx.insert(coll, docId.toString(), jsonObject);
                         }
                 ).then().retry()
