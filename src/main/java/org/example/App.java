@@ -166,6 +166,7 @@ public class App {
                 .buffer(buffer)
                 .map(countList -> Flux.fromIterable(countList)
                         .parallel(concurrency)
+                        .runOn(Schedulers.boundedElastic())
                         .concatMap(docId -> {
                                     if (docId % 1000 == 0) System.out.println(docId);
 //                                    return ctx.get(coll, docId.toString())
