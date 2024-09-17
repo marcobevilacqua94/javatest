@@ -86,20 +86,19 @@ public class App {
         ReactiveBucket bucket = cluster.bucket("test").reactive();
         bucket.waitUntilReady(Duration.ofSeconds(10)).block();
         ReactiveCollection coll = bucket.scope("test").collection("test");
-        int concurrency = Runtime.getRuntime().availableProcessors();
+        int concurrency = Runtime.getRuntime().availableProcessors() * 8;
         var finalDocs = Integer.parseInt(args[3]);
         Flux.range(0, finalDocs)
                 .parallel(concurrency)
-                .flatMap(count -> {
+                .concatMap(count -> {
                             if (count % 100 == 0) System.out.println(count);
                             return coll.insert(
                                     args[5] + "-" + count,
                                     jsonObject).onErrorComplete(DocumentExistsException.class).retry();
                         }
                 )
-                .sequential()
+                .then()
                 .retry()
-                .collectList()
                 .block();
     }
 
@@ -107,26 +106,25 @@ public class App {
         ReactiveBucket bucket = cluster.bucket("test").reactive();
         bucket.waitUntilReady(Duration.ofSeconds(10)).block();
         ReactiveCollection coll = bucket.scope("test").collection("test");
-        int concurrency = Runtime.getRuntime().availableProcessors();
+        int concurrency = Runtime.getRuntime().availableProcessors() * 8;
         var buffer = Integer.parseInt(args[6]);
         var finalDocs = Integer.parseInt(args[3]);
         Flux.range(0, finalDocs)
                 .buffer(buffer)
                 .map(countList -> Flux.fromIterable(countList)
                         .parallel(concurrency)
-                        .flatMap(count -> {
+                        .concatMap(count -> {
                                     if (count % 100 == 0) System.out.println(count);
                                     return coll.insert(
                                             args[5] + "-" + count,
                                             jsonObject).onErrorComplete(DocumentExistsException.class).retry();
                                 }
                         )
-                        .sequential()
+                        .then()
                         .retry()
-                        .collectList()
                         .block()
                 )
-                .collectList()
+                .then()
                 .retry()
                 .block();
     }
@@ -136,18 +134,20 @@ public class App {
         bucket.waitUntilReady(Duration.ofSeconds(10)).block();
         ReactiveCollection coll = bucket.scope("test").collection("test");
 
-        int concurrency = Runtime.getRuntime().availableProcessors(); // This many operations will be in-flight at once
+        int concurrency = Runtime.getRuntime().availableProcessors() * 8; // This many operations will be in-flight at once
 
 
         cluster.reactive().transactions().run((ctx) -> Flux.range(0, Integer.parseInt(args[3]))
                 .parallel(concurrency)
                 .runOn(Schedulers.boundedElastic())
-                .flatMap(
+                .concatMap(
                         docId -> {
-                            if (docId % 100 == 0) System.out.println(docId);
-                            return ctx.get(coll, docId.toString())
-                                    .doOnSuccess(doc -> ctx.replace(doc, jsonObject))
-                                    .onErrorResume(DocumentNotFoundException.class, (er) -> ctx.insert(coll, docId.toString(), jsonObject));
+                            if (docId % 1000 == 0) System.out.println(docId);
+
+//                            return ctx.get(coll, docId.toString())
+//                                    .doOnSuccess(doc -> ctx.replace(doc, jsonObject))
+//                                    .onErrorResume(DocumentNotFoundException.class, (er) -> ctx.insert(coll, docId.toString(), jsonObject));
+                            return ctx.insert(coll, docId.toString(), jsonObject);
                         }
                 ).then().retry()
         ).then().retry().block();
@@ -158,7 +158,7 @@ public class App {
         bucket.waitUntilReady(Duration.ofSeconds(10)).block();
         ReactiveCollection coll = bucket.scope("test").collection("test");
 
-        int concurrency = Runtime.getRuntime().availableProcessors(); // This many operations will be in-flight at once
+        int concurrency = Runtime.getRuntime().availableProcessors() * 8; // This many operations will be in-flight at once
 
         int buffer = Integer.parseInt(args[6]);
 
@@ -166,19 +166,19 @@ public class App {
                 .buffer(buffer)
                 .map(countList -> Flux.fromIterable(countList)
                         .parallel(concurrency)
-                        .flatMap(docId -> {
-                                    if (docId % 100 == 0) System.out.println(docId);
-                                    return ctx.get(coll, docId.toString())
-                                            .doOnSuccess(doc -> ctx.replace(doc, jsonObject))
-                                            .onErrorResume(DocumentNotFoundException.class, (er) -> ctx.insert(coll, docId.toString(), jsonObject));
+                        .concatMap(docId -> {
+                                    if (docId % 1000 == 0) System.out.println(docId);
+//                                    return ctx.get(coll, docId.toString())
+//                                            .doOnSuccess(doc -> ctx.replace(doc, jsonObject))
+//                                            .onErrorResume(DocumentNotFoundException.class, (er) -> ctx.insert(coll, docId.toString(), jsonObject));
+                                    return ctx.insert(coll, docId.toString(), jsonObject);
                                 }
                         )
-                        .sequential()
+                        .then()
                         .retry()
-                        .collectList()
                         .block()
                 )
-                .collectList()
+                .then()
                 .retry()
         ).then().retry().block();
     }
@@ -188,7 +188,7 @@ public class App {
         Bucket bucket = cluster.bucket("test");
         bucket.waitUntilReady(Duration.ofSeconds(10));
         Collection coll = bucket.scope("test").collection("test");
-        int concurrency = Runtime.getRuntime().availableProcessors(); // This many operations will be in-flight at once
+        int concurrency = Runtime.getRuntime().availableProcessors() * 8; // This many operations will be in-flight at once
 
 
         cluster.transactions().run((ctx) -> Flux.range(0, Integer.parseInt(args[3]))
@@ -196,7 +196,7 @@ public class App {
                 .runOn(Schedulers.boundedElastic())
                 .map(
                         docId -> {
-                            if (docId % 100 == 0) System.out.println(docId);
+                            if (docId % 1000 == 0) System.out.println(docId);
                             try {
                                 var doc = ctx.get(coll, docId.toString());
                                 return ctx.replace(doc, jsonObject);
@@ -216,7 +216,7 @@ public class App {
         Bucket bucket = cluster.bucket("test");
         bucket.waitUntilReady(Duration.ofSeconds(10));
         Collection coll = bucket.scope("test").collection("test");
-        int concurrency = Runtime.getRuntime().availableProcessors(); // This many operations will be in-flight at once
+        int concurrency = Runtime.getRuntime().availableProcessors() * 8; // This many operations will be in-flight at once
         int buffer = Integer.parseInt(args[6]);
 
         cluster.transactions().run((ctx) -> Flux.range(0, Integer.parseInt(args[3]))
@@ -224,7 +224,7 @@ public class App {
                 .map(countList -> Flux.fromIterable(countList)
                         .parallel(concurrency)
                         .map(docId -> {
-                                    if (docId % 100 == 0) System.out.println(docId);
+                                    if (docId % 1000 == 0) System.out.println(docId);
                                     try {
                                         var doc = ctx.get(coll, docId.toString());
                                         return ctx.replace(doc, jsonObject);
@@ -233,12 +233,11 @@ public class App {
                                     }
                                 }
                         )
-                        .sequential()
+                        .then()
                         .retry()
-                        .collectList()
                         .block()
                 )
-                .collectList()
+                .then()
                 .retry()
                 .block()
         );
