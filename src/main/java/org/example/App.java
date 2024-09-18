@@ -62,6 +62,7 @@ public class App {
 
                         .environment(env -> {env.transactionsConfig(TransactionsConfig.builder()
                                 .timeout(Duration.ofMinutes(10))
+
                                 .durabilityLevel(DurabilityLevel.NONE)
                                 .build()); env.ioConfig().numKvConnections(64);})
         )
@@ -125,7 +126,7 @@ public class App {
                             return ctx.insert(coll, docId.toString(), jsonObject);
 
                         }
-                ).then()
+                ).then(), TransactionOptions.transactionOptions().timeout(Duration.ofMinutes(10))
         ).doOnError(err -> {
             if (err instanceof TransactionCommitAmbiguousException) {
                 throw logCommitAmbiguousError((TransactionCommitAmbiguousException) err);
