@@ -62,8 +62,8 @@ public class App {
 
                         .environment(env -> {env.transactionsConfig(TransactionsConfig.builder()
                                 .timeout(Duration.ofMinutes(10))
-                          //      .durabilityLevel(DurabilityLevel.NONE)
-                                .build()); env.ioConfig().numKvConnections(64);})
+                                .durabilityLevel(DurabilityLevel.NONE)
+                                .build()); env.ioConfig().numKvConnections(256);})
         )
 
         ) {
