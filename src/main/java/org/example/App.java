@@ -63,7 +63,7 @@ public class App {
                         .environment(env -> {env.transactionsConfig(TransactionsConfig.builder()
                                 .timeout(Duration.ofMinutes(10))
                                 .durabilityLevel(DurabilityLevel.NONE)
-                                .build()); env.ioConfig().numKvConnections(256);})
+                                .build()); env.ioConfig().numKvConnections(64);})
         )
 
         ) {
@@ -113,13 +113,13 @@ public class App {
 //                        }
 //                ).then(), TransactionOptions.transactionOptions().timeout(Duration.ofMinutes(10))).block();
 
-        int concurrency = Runtime.getRuntime().availableProcessors() * 8; // This many operations will be in-flight at once
+        int concurrency = Runtime.getRuntime().availableProcessors(); // This many operations will be in-flight at once
 
         Long start = System.nanoTime();
         TransactionResult result = cluster.reactive().transactions().run((ctx) -> Flux.range(0, num)
                 .parallel(concurrency)
                 .runOn(Schedulers.boundedElastic())
-                .concatMap(
+                .flatMap(
                         docId -> {
                             if (docId % 1000 == 0) {System.out.println(docId); System.out.println("millisecs " + (System.nanoTime() - start) / 1000000);}
                             return ctx.insert(coll, docId.toString(), jsonObject);
