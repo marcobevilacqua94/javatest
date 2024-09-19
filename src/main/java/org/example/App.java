@@ -53,7 +53,6 @@ public class App {
         JsonObject jsonObject = JsonObject.create();
 
         jsonObject.put("body", RandomString(Integer.parseInt(args[4])));
-        jsonObject.put("version", args[5]);
 
 
         try (Cluster cluster = Cluster.connect(
@@ -119,7 +118,7 @@ public class App {
         Long start = System.nanoTime();
         TransactionResult result = cluster.reactive().transactions().run((ctx) -> Flux.range(0, num)
                 .parallel(concurrency)
-                .runOn(Schedulers.boundedElastic())
+                .runOn(Schedulers.newParallel("parallel", concurrency))
                 .concatMap(
                         docId -> {
                             if (docId % 1000 == 0) {System.out.println(docId); System.out.println("millisecs " + (System.nanoTime() - start) / 1000000);}
