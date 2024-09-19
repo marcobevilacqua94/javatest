@@ -101,7 +101,7 @@ public class App {
         bucket.waitUntilReady(Duration.ofSeconds(10)).block();
         ReactiveCollection coll = bucket.scope("test").collection(collectionName);
 
-        int concurrency = Runtime.getRuntime().availableProcessors() * 8;
+        int concurrency = 64;
 
         TransactionResult result = cluster.reactive().transactions().run((ctx) -> {
 
