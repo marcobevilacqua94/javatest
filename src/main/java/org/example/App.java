@@ -14,17 +14,20 @@ import com.couchbase.client.java.transactions.config.TransactionsConfig;
 import com.couchbase.client.java.transactions.error.TransactionCommitAmbiguousException;
 import com.couchbase.client.java.transactions.error.TransactionFailedException;
 
+import java.io.FileNotFoundException;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
-
+import java.io.PrintWriter;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.FileHandler;
 import java.util.logging.LogManager;
 import java.util.logging.Logger;
+import java.io.File;
 
+import static java.lang.Integer.valueOf;
 
 /**
  * Hello world!
@@ -63,7 +66,7 @@ public class App {
                                 .timeout(Duration.ofMinutes(10))
 
                                 .durabilityLevel(DurabilityLevel.NONE)
-                                .build()); env.ioConfig().numKvConnections(128);})
+                                .build()); env.ioConfig().numKvConnections(64);})
         )
 
         ) {
@@ -88,7 +91,7 @@ public class App {
 
         String collectionName = "test";
         int num;
-        if(warmup){
+        if (warmup) {
             collectionName = "warmup";
             num = 500;
         } else {
@@ -97,135 +100,36 @@ public class App {
         ReactiveBucket bucket = cluster.bucket("test").reactive();
         bucket.waitUntilReady(Duration.ofSeconds(10)).block();
         ReactiveCollection coll = bucket.scope("test").collection(collectionName);
-//        int concurrency = Runtime.getRuntime().availableProcessors() * 8;
-//        AtomicInteger inFlight = new AtomicInteger(0);
-//        JsonObject jsonObject1 = JsonObject.create();
-//
-//        TransactionResult result = cluster.reactive().transactions().run((ctx) -> Flux.range(0, num)
-//                .parallel(concurrency)
-//                .runOn(Schedulers.boundedElastic())
-//                .concatMap(
-//                        docId -> {
-//                            int x = inFlight.incrementAndGet();
-//                            if (docId % 50 == 0) System.out.println("Ferrari: " + docId + " " + x);
-//                            return ctx.insert(coll, docId.toString(), jsonObject1)
-//                                    .doOnNext(v -> inFlight.decrementAndGet());
-//                        }
-//                ).then(), TransactionOptions.transactionOptions().timeout(Duration.ofMinutes(10))).block();
 
-     //   int concurrency = Runtime.getRuntime().availableProcessors() / 4; // This many operations will be in-flight at once
+        int concurrency = Runtime.getRuntime().availableProcessors();
 
-        Long start = System.nanoTime();
+        TransactionResult result = cluster.reactive().transactions().run((ctx) -> {
 
-        TransactionResult result = cluster.reactive().transactions().run((ctx) -> Flux.range(0, num)
-                .parallel()
-                .runOn(Schedulers.parallel())
-                .flatMap(
-                        docId -> {
-                            if (docId % 1000 == 0) {System.out.println(docId); System.out.println("millisecs " + (System.nanoTime() - start) / 1000000);}
+                    Mono<Void> firstOp = ctx.insert(coll, "0", jsonObject).then();
 
-                            return ctx.insert(coll, docId.toString(), jsonObject);
+                    Mono<Void> restOfOps = Flux.range(1, num)
+                            .parallel(concurrency)
+                            .runOn(Schedulers.newBoundedElastic(concurrency, Integer.MAX_VALUE, "bounded"))
+                            .concatMap(
+                                    docId -> ctx.insert(coll, docId.toString(), jsonObject)
+                            ).sequential().then();
 
-                        }
-                ).then(), TransactionOptions.transactionOptions().timeout(Duration.ofMinutes(10))
+
+                    return firstOp.then(restOfOps);
+
+                }, TransactionOptions.transactionOptions().timeout(Duration.ofMinutes(10))
         ).doOnError(err -> {
-            if (err instanceof TransactionCommitAmbiguousException) {
-                throw logCommitAmbiguousError((TransactionCommitAmbiguousException) err);
-            } else if (err instanceof TransactionFailedException) {
-                throw logFailure((TransactionFailedException) err);
-            }
+            logger.info("Transaction failed");
         }).block();
-        try {
-            logger.addHandler(new FileHandler("./transactionlog.txt"));
-        } catch (IOException e) {
-            throw new RuntimeException(e);
+        if (warmup)
+            logger.info("Warmup transaction completed");
+        else
+            logger.info("Transaction completed");
+        try (PrintWriter writer = new PrintWriter("logs_ExtParallelUnstaging.txt")) {
+            result.logs().forEach(log -> writer.println(log));
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
         }
-        result.logs().forEach(message -> logger.info(message.toString()));
-    }
-
-
-    public static void bulkTransactionReactiveBuffered(JsonObject jsonObject, Cluster cluster, String[] args, boolean warmup) {
-
-        String collectionName = "test";
-        int num;
-        if(warmup){
-            collectionName = "warmup";
-            num = 1000;
-        } else {
-            num = Integer.parseInt(args[3]);
-        }
-        ReactiveBucket bucket = cluster.bucket("test").reactive();
-        bucket.waitUntilReady(Duration.ofSeconds(10)).block();
-        ReactiveCollection coll = bucket.scope("test").collection(collectionName);
-//        int concurrency = Runtime.getRuntime().availableProcessors() * 8;
-//        AtomicInteger inFlight = new AtomicInteger(0);
-//        JsonObject jsonObject1 = JsonObject.create();
-//
-//        TransactionResult result = cluster.reactive().transactions().run((ctx) -> Flux.range(0, num)
-//                .parallel(concurrency)
-//                .runOn(Schedulers.boundedElastic())
-//                .concatMap(
-//                        docId -> {
-//                            int x = inFlight.incrementAndGet();
-//                            if (docId % 50 == 0) System.out.println("Ferrari: " + docId + " " + x);
-//                            return ctx.insert(coll, docId.toString(), jsonObject1)
-//                                    .doOnNext(v -> inFlight.decrementAndGet());
-//                        }
-//                ).then(), TransactionOptions.transactionOptions().timeout(Duration.ofMinutes(10))).block();
-
-        int concurrency = Runtime.getRuntime().availableProcessors() * 8; // This many operations will be in-flight at once
-
-        Long start = System.nanoTime();
-
-        TransactionResult result = cluster.reactive().transactions().run((ctx) -> Flux.range(0, num)
-                .buffer(10000)
-                .concatMap(countList -> Flux.fromIterable(countList)
-                    .parallel(concurrency)
-                    .runOn(Schedulers.parallel())
-                    .flatMap(
-                            docId -> {
-                                if (docId % 1000 == 0) {System.out.println(docId); System.out.println("millisecs " + (System.nanoTime() - start) / 1000000);}
-
-                                return ctx.insert(coll, docId.toString(), jsonObject);
-
-                            }
-                    ).then()
-                ).collectList().then(), TransactionOptions.transactionOptions().timeout(Duration.ofMinutes(10))
-        ).doOnError(err -> {
-            if (err instanceof TransactionCommitAmbiguousException) {
-                throw logCommitAmbiguousError((TransactionCommitAmbiguousException) err);
-            } else if (err instanceof TransactionFailedException) {
-                throw logFailure((TransactionFailedException) err);
-            }
-        }).block();
-        try {
-            logger.addHandler(new FileHandler("./transactionlog.txt"));
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-        result.logs().forEach(message -> logger.info(message.toString()));
-    }
-
-    public static RuntimeException logCommitAmbiguousError(TransactionCommitAmbiguousException err) {
-        // This example will intentionally not compile: the application needs to use
-        // its own logging system to replace `logger`.
-        logger.warning("Transaction possibly reached the commit point");
-
-        for (TransactionLogEvent msg : err.logs()) {
-            logger.warning(msg.toString());
-        }
-
-        return err;
-    }
-
-    public static RuntimeException logFailure(TransactionFailedException err) {
-        logger.warning("Transaction did not reach commit point");
-
-        for (TransactionLogEvent msg : err.logs()) {
-            logger.warning(msg.toString());
-        }
-
-        return err;
     }
 
 }
