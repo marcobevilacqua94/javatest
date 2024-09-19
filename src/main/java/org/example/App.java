@@ -63,7 +63,7 @@ public class App {
                                 .timeout(Duration.ofMinutes(10))
 
                                 .durabilityLevel(DurabilityLevel.NONE)
-                                .build()); env.ioConfig().numKvConnections(64);})
+                                .build()); env.ioConfig().numKvConnections(128);})
         )
 
         ) {
@@ -113,19 +113,84 @@ public class App {
 //                        }
 //                ).then(), TransactionOptions.transactionOptions().timeout(Duration.ofMinutes(10))).block();
 
-        int concurrency = Runtime.getRuntime().availableProcessors() * 8; // This many operations will be in-flight at once
+     //   int concurrency = Runtime.getRuntime().availableProcessors() / 4; // This many operations will be in-flight at once
 
         Long start = System.nanoTime();
+
         TransactionResult result = cluster.reactive().transactions().run((ctx) -> Flux.range(0, num)
-                .parallel(concurrency)
-                .runOn(Schedulers.newParallel("parallel", concurrency))
-                .concatMap(
+                .parallel()
+                .runOn(Schedulers.parallel())
+                .flatMap(
                         docId -> {
                             if (docId % 1000 == 0) {System.out.println(docId); System.out.println("millisecs " + (System.nanoTime() - start) / 1000000);}
+
                             return ctx.insert(coll, docId.toString(), jsonObject);
 
                         }
                 ).then(), TransactionOptions.transactionOptions().timeout(Duration.ofMinutes(10))
+        ).doOnError(err -> {
+            if (err instanceof TransactionCommitAmbiguousException) {
+                throw logCommitAmbiguousError((TransactionCommitAmbiguousException) err);
+            } else if (err instanceof TransactionFailedException) {
+                throw logFailure((TransactionFailedException) err);
+            }
+        }).block();
+        try {
+            logger.addHandler(new FileHandler("./transactionlog.txt"));
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+        result.logs().forEach(message -> logger.info(message.toString()));
+    }
+
+
+    public static void bulkTransactionReactiveBuffered(JsonObject jsonObject, Cluster cluster, String[] args, boolean warmup) {
+
+        String collectionName = "test";
+        int num;
+        if(warmup){
+            collectionName = "warmup";
+            num = 1000;
+        } else {
+            num = Integer.parseInt(args[3]);
+        }
+        ReactiveBucket bucket = cluster.bucket("test").reactive();
+        bucket.waitUntilReady(Duration.ofSeconds(10)).block();
+        ReactiveCollection coll = bucket.scope("test").collection(collectionName);
+//        int concurrency = Runtime.getRuntime().availableProcessors() * 8;
+//        AtomicInteger inFlight = new AtomicInteger(0);
+//        JsonObject jsonObject1 = JsonObject.create();
+//
+//        TransactionResult result = cluster.reactive().transactions().run((ctx) -> Flux.range(0, num)
+//                .parallel(concurrency)
+//                .runOn(Schedulers.boundedElastic())
+//                .concatMap(
+//                        docId -> {
+//                            int x = inFlight.incrementAndGet();
+//                            if (docId % 50 == 0) System.out.println("Ferrari: " + docId + " " + x);
+//                            return ctx.insert(coll, docId.toString(), jsonObject1)
+//                                    .doOnNext(v -> inFlight.decrementAndGet());
+//                        }
+//                ).then(), TransactionOptions.transactionOptions().timeout(Duration.ofMinutes(10))).block();
+
+        int concurrency = Runtime.getRuntime().availableProcessors() * 8; // This many operations will be in-flight at once
+
+        Long start = System.nanoTime();
+
+        TransactionResult result = cluster.reactive().transactions().run((ctx) -> Flux.range(0, num)
+                .buffer(10000)
+                .concatMap(countList -> Flux.fromIterable(countList)
+                    .parallel(concurrency)
+                    .runOn(Schedulers.parallel())
+                    .flatMap(
+                            docId -> {
+                                if (docId % 1000 == 0) {System.out.println(docId); System.out.println("millisecs " + (System.nanoTime() - start) / 1000000);}
+
+                                return ctx.insert(coll, docId.toString(), jsonObject);
+
+                            }
+                    ).then()
+                ).collectList().then(), TransactionOptions.transactionOptions().timeout(Duration.ofMinutes(10))
         ).doOnError(err -> {
             if (err instanceof TransactionCommitAmbiguousException) {
                 throw logCommitAmbiguousError((TransactionCommitAmbiguousException) err);
