@@ -101,13 +101,13 @@ public class App {
         bucket.waitUntilReady(Duration.ofSeconds(10)).block();
         ReactiveCollection coll = bucket.scope("test").collection(collectionName);
 
-        int concurrency = Runtime.getRuntime().availableProcessors();
+        int concurrency = Runtime.getRuntime().availableProcessors() * 8;
 
         TransactionResult result = cluster.reactive().transactions().run((ctx) -> {
 
                     Mono<Void> firstOp = ctx.insert(coll, "0", jsonObject).then();
 
-                    Mono<Void> restOfOps = Flux.range(1, num)
+                    Mono<Void> restOfOps = Flux.range(1, new Integer(num))
                             .parallel(concurrency)
                             .runOn(Schedulers.newBoundedElastic(concurrency, Integer.MAX_VALUE, "bounded"))
                             .concatMap(
